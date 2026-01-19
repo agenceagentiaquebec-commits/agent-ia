@@ -1,0 +1,5 @@
+.env
+OPENAI.env
+*.wav
+*.exe
+ffmpeg/

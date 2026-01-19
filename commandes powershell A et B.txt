@@ -1,0 +1,3 @@
+.\ngrok http 8000 --domain=emily-agent.ngrok.app
+
+py -m uvicorn main:app --reload --port 8000
