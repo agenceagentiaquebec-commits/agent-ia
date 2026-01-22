@@ -252,3 +252,7 @@ def voice_file():
 @app.get("/intro")
 def intro_file():
     return FileResponse("emily_intro.wav", media_type="audio/wav")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
