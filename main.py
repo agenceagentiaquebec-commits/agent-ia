@@ -96,6 +96,8 @@ def generate_audio_bytes(text):
     }
 
     response = requests.post(url, json=data, headers=headers)
+    print("Status code:", response.status_code)
+    print("Headers:", response.headers)
     print("Audio lenght:", len(response.content))
     return response.content
 
