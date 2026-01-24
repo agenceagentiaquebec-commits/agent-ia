@@ -96,6 +96,7 @@ def generate_audio_bytes(text):
     }
 
     response = requests.post(url, json=data, headers=headers)
+    print("Audio lenght:", len(response.content))
     return response.content
 
 #----------------------------------------------------------------------------------
@@ -113,6 +114,8 @@ def load_intro_audio():
 
 load_intro_audio()
 
+print("Intro audio lenght:", len(intro_audio_bytes))
+
 # ---------------------------------------------------------
 # Endpoint Twilio (POST)
 # ---------------------------------------------------------
@@ -122,6 +125,7 @@ async def voice(request: Request):
     global conversation_state, last_audio_bytes
 
     data = await request.form()
+    print("Twilio a bien appelé /voice")
     user_message = data.get("SpeechResult", "")
 
     # Si aucun message n'a été dit -> jouer le message d'accueil fixe
