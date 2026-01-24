@@ -3,7 +3,6 @@
 # ---------------------------------------------------------
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse
 from fastapi.responses import Response
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -27,6 +26,8 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 app = FastAPI()
 
 conversation_state = {}
+last_audio_bytes = None
+intro_audio_bytes = None
 
 # ---------------------------------------------------------
 # Fonction d'analyse OpenAI
@@ -66,17 +67,15 @@ Le JSON doit contenir :
         ]
     )
 
-    print("RAW OPENAI RESPONSE:", response)
     return response.choices[0].message.content
 
 
 # ---------------------------------------------------------
-# Fonction pour générer l'audio Emily (WAV compatible Twilio)
+# Génération AUDIO EN MÉMOIRE (pas de fichiers)
 # ---------------------------------------------------------
-import subprocess
 
-def generate_audio(text, output_filename="emily_twilio.wav"):
-    # Générer l'audio Elevenlabs (format non compatible avec twilio)
+
+def generate_audio_bytes(text):
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVEN_VOICE_ID}/stream"
 
     headers = {
@@ -96,90 +95,31 @@ def generate_audio(text, output_filename="emily_twilio.wav"):
         }
     }
 
-
-
-    # Fichier temporaire ElevenLabs
-    raw_file = "raw_eleven.wav"
-
     response = requests.post(url, json=data, headers=headers)
+    return response.content
 
-    with open(raw_file, "wb") as f:
-        f.write(response.content)
+#----------------------------------------------------------------------------------
+# Générer l'intro une seule fois
+# ---------------------------------------------------------------------------------
 
-    #Convertir en WAV PCM 16-bit mono 16Khz compatible Twilio
-    subprocess.run([
-        "ffmpeg",
-        "-y",
-        "-i",raw_file,
-        "-ac", "1",   #mono
-        "-ar", "16000", #16 kHz
-        "-acodec", "pcm_s16le", #PCM 16-bit
-        "-af", "silenceremove=start_periods=1:start_duration=0.1:start_threshold=-40dB:stop_periods=1:stop_duration=0.1:stop_threshold=-40dB",
-        output_filename
-    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+def load_intro_audio():
+    global intro_audio_bytes
+    if intro_audio_bytes is None:
+        intro_text = (
+            "Bonjour, ici Emily des Constructions P Gendreau. "
+            "Merci d'avoir appelé aujourd'hui. Comment puis-je vous aider?"
+        )
+        intro_audio_bytes = generate_audio_bytes(intro_text)
 
-
-
-def generate_intro_audio():
-    intro_text = (
-        "Bonjour, ici Emily des Constructions P Gendreau."
-        "Merci d'avoir appelé aujourd'hui. Comment puis-je vous aider?"
-    )
-    generate_audio(intro_text, output_filename="emily_intro.wav") 
-
-
-
-
-
-
-
-
+load_intro_audio()
 
 # ---------------------------------------------------------
-# Endpoint pour générer un message d'accueil (test)
-# ---------------------------------------------------------
-
-TEXT = """
-Bonjour… Emily des Construction PGendreau… merci d’avoir appelé aujourd’hui…
-Comment puis‑je vous aider?
-"""
-
-@app.get("/generate-voice")
-def generate_voice():
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVEN_VOICE_ID}/stream"
-
-    headers = {
-        "xi-api-key": ELEVEN_API_KEY,
-        "Content-Type": "application/json",
-        "Accept": "audio/wav"
-    }
-
-    data = {
-        "text": TEXT,
-        "model_id": "eleven_multilingual_v2",
-        "voice_settings": {
-            "stability": 0.4,
-            "similarity_boost": 0.8,
-            "style": 0.3,
-            "use_speaker_boost": True
-        }
-    }
-
-    response = requests.post(url, json=data, headers=headers)
-
-    with open("emily.wav", "wb") as f:
-        f.write(response.content)
-
-    return {"status": "ok", "message": "Audio generated", "file": "emily.wav"}
-
-
-# ---------------------------------------------------------
-# Endpoint Twilio (POST) → analyse + réponse vocale
+# Endpoint Twilio (POST)
 # ---------------------------------------------------------
 
 @app.post("/voice")
 async def voice(request: Request):
-    global conversation_state
+    global conversation_state, last_audio_bytes
 
     data = await request.form()
     user_message = data.get("SpeechResult", "")
@@ -188,7 +128,7 @@ async def voice(request: Request):
     if not user_message:
         return Response(
             content="""<Response>
-<Play>https://emily-agent.ngrok.app/intro</Play>
+<Play>https://agent-ia-rrlb.onrender.com/intro</Play>
 <Pause length="1"/>
 <Redirect>/listen</Redirect>
 </Response>""",
@@ -202,21 +142,21 @@ async def voice(request: Request):
         analysis = json.loads(analysis_json)
     except:
         return Response(
-            content="""<Response>
-<Say>Une erreur est survenue, je suis désolé.</Say>
-</Response>""",
+            content="<Response><Say>Une erreur est survenue, je suis désolé.</Say></Response>",
             media_type="application/xml"
         )
 
     conversation_state.update(analysis["extracted_info"])
 
     final_reply = analysis["final_reply"]
-    generate_audio(final_reply, output_filename="emily_twilio.wav")
+    
+    # Généer l'audio EN MÉMOIRE
+    last_audio_bytes = generate_audio_bytes(final_reply)
 
     # Emily parle -> puis Twilio écoute
     return Response(
-        content="""<Response>
-<Play>https://emily-agent.ngrok.app/voice-file</Play>
+        content=f"""<Response>
+<Play>https://agent-ia-rrlb.onrender.com/voice-file</Play>
 <Pause length="1"/>
 <Redirect>/listen</Redirect>
 </Response>""",
@@ -241,17 +181,25 @@ async def listen():
     )
 
 # ---------------------------------------------------------
-# Endpoint qui sert le fichier audio WAV
+# Endpoint qui sert l'audio depuis la mémoire
 # ---------------------------------------------------------
 
 @app.get("/voice-file")
 def voice_file():
-    return FileResponse("emily_twilio.wav", media_type="audio/wav")
+    global last_audio_bytes
+    if last_audio_bytes is None:
+        return Response("No audio", status_code=404)
+    return Response(last_audio_bytes, media_type="audio/wav")
 
 
 @app.get("/intro")
 def intro_file():
-    return FileResponse("emily_intro.wav", media_type="audio/wav")
+    global intro_audio_bytes
+    return Response(intro_audio_bytes, media_type="audio/wav")
+
+# -------------------------------------------------------------------
+# Lancer le serveur
+# -------------------------------------------------------------------
 
 if __name__ == "__main__":
     import uvicorn
