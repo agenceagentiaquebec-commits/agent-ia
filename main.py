@@ -3,7 +3,7 @@
 # ---------------------------------------------------------
 
 from fastapi import FastAPI, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from dotenv import load_dotenv
 from openai import OpenAI
 import os
@@ -26,8 +26,8 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 app = FastAPI()
 
 conversation_state = {}
-last_audio_bytes = None
-intro_audio_bytes = None
+last_audio_stream = None
+intro_audio_stream = None
 
 # ---------------------------------------------------------
 # Fonction d'analyse OpenAI
@@ -71,12 +71,12 @@ Le JSON doit contenir :
 
 
 # ---------------------------------------------------------
-# Génération AUDIO EN MÉMOIRE (pas de fichiers)
+# STREAMING AUDIO (vrai streaming ElevenLabs)
 # ---------------------------------------------------------
 
 
-def generate_audio_bytes(text):
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVEN_VOICE_ID}"
+def generate_audio_stream(text):
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVEN_VOICE_ID}/stream"
 
     headers = {
         "xi-api-key": ELEVEN_API_KEY,
@@ -85,7 +85,7 @@ def generate_audio_bytes(text):
 
     data = {
         "text": text,
-        "model_id": "eleven_turbo_v2",
+        "model_id": "eleven_turbo_v2_5",
         "voice_settings": {
             "stability": 0.4,
             "similarity_boost": 0.8,
@@ -94,28 +94,24 @@ def generate_audio_bytes(text):
         }
     }
 
-    response = requests.post(url, json=data, headers=headers)
-    print("Status code:", response.status_code)
-    print("Headers:", response.headers)
-    print("Audio lenght:", len(response.content))
-    return response.content
+    # stream=True -> réception chunk par chunk
+    return requests.post(url, json=data, headers=headers, stream=True)
+    
 
 #----------------------------------------------------------------------------------
-# Générer l'intro une seule fois
+# Générer l'intro une seule fois (en streaming)
 # ---------------------------------------------------------------------------------
 
 def load_intro_audio():
-    global intro_audio_bytes
-    if intro_audio_bytes is None:
+    global intro_audio_stream
+    if intro_audio_stream is None:
         intro_text = (
             "Bonjour, ici Emily des Constructions P Gendreau. "
             "Merci d'avoir appelé aujourd'hui. Comment puis-je vous aider?"
         )
-        intro_audio_bytes = generate_audio_bytes(intro_text)
+        intro_audio_stream = generate_audio_stream(intro_text)
 
 load_intro_audio()
-
-print("Intro audio lenght:", len(intro_audio_bytes))
 
 # ---------------------------------------------------------
 # Endpoint Twilio (POST)
@@ -123,17 +119,17 @@ print("Intro audio lenght:", len(intro_audio_bytes))
 
 @app.post("/voice")
 async def voice(request: Request):
-    global conversation_state, last_audio_bytes
+    global conversation_state, last_audio_stream
 
     data = await request.form()
     print("Twilio a bien appelé /voice")
     user_message = data.get("SpeechResult", "")
 
-    # Si aucun message n'a été dit -> jouer le message d'accueil fixe
+    # Si aucun message n'a été dit -> jouer l'intro
     if not user_message:
         return Response(
-            content="""<Response>
-<Play>https://agent-ia-rrlb.onrender.com/intro</Play>
+            content=f"""<Response>
+<Play>https://emily-backend-996818120694.northamerica-northeast1.run.app/intro</Play>
 <Pause length="1"/>
 <Redirect>/listen</Redirect>
 </Response>""",
@@ -155,20 +151,22 @@ async def voice(request: Request):
 
     final_reply = analysis["final_reply"]
     
-    # Généer l'audio EN MÉMOIRE
-    last_audio_bytes = generate_audio_bytes(final_reply)
+    # Streaming audio
+    last_audio_stream = generate_audio_stream(final_reply)
 
     # Emily parle -> puis Twilio écoute
     return Response(
         content=f"""<Response>
-<Play>https://agent-ia-rrlb.onrender.com/voice-file</Play>
+<Play>https://emily-backend-996818120694.northamerica-northeast1.run.app/voice-file</Play>
 <Pause length="1"/>
 <Redirect>/listen</Redirect>
 </Response>""",
         media_type="application/xml"
     )
-
+# ----------------------------------------
 # la place où Twilio écoute
+# ----------------------------------------
+
 @app.post("/listen")
 async def listen():
     return Response(
@@ -186,21 +184,33 @@ async def listen():
     )
 
 # ---------------------------------------------------------
-# Endpoint qui sert l'audio depuis la mémoire
+# Endpoints STREAMING audio
 # ---------------------------------------------------------
 
 @app.get("/voice-file")
 def voice_file():
-    global last_audio_bytes
-    if last_audio_bytes is None:
+    global last_audio_stream
+    if last_audio_stream is None:
         return Response("No audio", status_code=404)
-    return Response(last_audio_bytes, media_type="audio/wav")
+    
+    def audio_generator():
+        for chunk in last_audio_stream.iter_content(chunk_size=1024):
+            if chunk:
+                yield chunk
+
+    return StreamingResponse(audio_generator(), media_type="audio/wav")
 
 
 @app.get("/intro")
 def intro_file():
-    global intro_audio_bytes
-    return Response(intro_audio_bytes, media_type="audio/wav")
+    global intro_audio_stream
+
+    def audio_generator():
+        for chunk in intro_audio_stream.iter_content(chunk_sizes=1024):
+            if chunk:
+                yield chunk
+
+    return StreamingResponse(audio_generator(), media_type="audio/wav")
 
 # -------------------------------------------------------------------
 # Lancer le serveur
@@ -208,4 +218,4 @@ def intro_file():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
