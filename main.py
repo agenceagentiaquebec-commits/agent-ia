@@ -26,8 +26,7 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 app = FastAPI()
 
 conversation_state = {}
-last_audio_stream = None
-intro_audio_stream = None
+last_text_to_speak = None  # on stocke le texte
 
 # ---------------------------------------------------------
 # Fonction d'analyse OpenAI
@@ -58,17 +57,19 @@ Le JSON doit contenir :
 - reformulation
 - final_reply
 """
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Tu es Emily. Réponds STRICTEMENT en JSON brut, sans ```json, sans ```."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        return response.choices[0].message.content
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "Tu es Emily. Réponds STRICTEMENT en JSON brut, sans ```json, sans ```."},
-            {"role": "user", "content": prompt}
-        ]
-    )
-
-    return response.choices[0].message.content
-
+    except Exception as e:
+        print("Erreur OpenAI:", e)
+        return '{"final_reply": "Je suis désolée, une erreur est survenue.", "extracted_info": {}}'
 
 # ---------------------------------------------------------
 # STREAMING AUDIO (vrai streaming ElevenLabs)
@@ -94,24 +95,18 @@ def generate_audio_stream(text):
         }
     }
 
+    try:
     # stream=True -> réception chunk par chunk
-    return requests.post(url, json=data, headers=headers, stream=True)
+        response = requests.post(url, json=data, headers=headers, stream=True, timeout=30)
+
+        if response.status_code != 200:
+            print("Erreur ElevenLabs:", response.status_code, response.text)
+            return None
     
-
-#----------------------------------------------------------------------------------
-# Générer l'intro une seule fois (en streaming)
-# ---------------------------------------------------------------------------------
-
-def load_intro_audio():
-    global intro_audio_stream
-    if intro_audio_stream is None:
-        intro_text = (
-            "Bonjour, ici Emily des Constructions P Gendreau. "
-            "Merci d'avoir appelé aujourd'hui. Comment puis-je vous aider?"
-        )
-        intro_audio_stream = generate_audio_stream(intro_text)
-
-load_intro_audio()
+        return response
+    except Exception as e:
+        print("Erreur streaming ElevenLabs:", e)
+        return None
 
 # ---------------------------------------------------------
 # Endpoint Twilio (POST)
@@ -119,7 +114,7 @@ load_intro_audio()
 
 @app.post("/voice")
 async def voice(request: Request):
-    global conversation_state, last_audio_stream
+    global conversation_state, last_text_to_speak
 
     data = await request.form()
     print("Twilio a bien appelé /voice")
@@ -127,9 +122,13 @@ async def voice(request: Request):
 
     # Si aucun message n'a été dit -> jouer l'intro
     if not user_message:
+        last_text_to_speak = (
+            "Bonjour, ici Emily des Constructions P Gendreau. "
+            "Merci d'avoir appelé aujourd'hui. Comment puis-je vous aider?"
+        )
         return Response(
             content=f"""<Response>
-<Play>https://emily-backend-996818120694.northamerica-northeast1.run.app/intro</Play>
+<Play>https://emily-backend-996818120694.northamerica-northeast1.run.app/voice-file</Play>
 <Pause length="1"/>
 <Redirect>/listen</Redirect>
 </Response>""",
@@ -142,17 +141,12 @@ async def voice(request: Request):
     try:
         analysis = json.loads(analysis_json)
     except:
-        return Response(
-            content="<Response><Say>Une erreur est survenue, je suis désolé.</Say></Response>",
-            media_type="application/xml"
-        )
+        analysis = {"final_reply": "Je suis désolée, une erreur est survenue.", "extracted_info": {}}
 
-    conversation_state.update(analysis["extracted_info"])
+    conversation_state.update(analysis.get("extracted_info", {}))
 
-    final_reply = analysis["final_reply"]
-    
-    # Streaming audio
-    last_audio_stream = generate_audio_stream(final_reply)
+    # On stocke le texte, pas le stream
+    last_text_to_speak = analysis["final_reply"]
 
     # Emily parle -> puis Twilio écoute
     return Response(
@@ -184,17 +178,24 @@ async def listen():
     )
 
 # ---------------------------------------------------------
-# Endpoints STREAMING audio
+# Endpoint STREAMING audio stable
 # ---------------------------------------------------------
 
 @app.get("/voice-file")
 def voice_file():
-    global last_audio_stream
-    if last_audio_stream is None:
+    global last_text_to_speak
+
+    if not last_text_to_speak:
         return Response("No audio", status_code=404)
     
+    stream = generate_audio_stream(last_text_to_speak)
+    
+    if stream is None:
+        return Response("Erreur audio", status_code=500)
+    
+    
     def audio_generator():
-        for chunk in last_audio_stream.iter_content(chunk_size=1024):
+        for chunk in stream.iter_content(chunk_size=1024):
             if chunk:
                 yield chunk
 
@@ -203,10 +204,14 @@ def voice_file():
 
 @app.get("/intro")
 def intro_file():
-    global intro_audio_stream
+    intro_text = (
+        "Bonjour, ici Emily des Constructions P Gendreau. "
+        "Merci d'avoir appelé aujourd'hui. Comment puis-je vous aider?"
+    )
+    intro_stream = generate_audio_stream(intro_text)
 
     def audio_generator():
-        for chunk in intro_audio_stream.iter_content(chunk_sizes=1024):
+        for chunk in intro_stream.iter_content(chunk_size=1024):
             if chunk:
                 yield chunk
 
