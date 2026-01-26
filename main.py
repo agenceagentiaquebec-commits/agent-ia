@@ -87,6 +87,7 @@ def generate_audio_stream(text):
     data = {
         "text": text,
         "model_id": "eleven_turbo_v2_5",
+        "output_format": "pcm_16000",   # <-- FORMAT COMPATIBLE TWILIO
         "voice_settings": {
             "stability": 0.4,
             "similarity_boost": 0.8,
@@ -199,7 +200,7 @@ def voice_file():
             if chunk:
                 yield chunk
 
-    return StreamingResponse(audio_generator(), media_type="audio/wav")
+    return StreamingResponse(audio_generator(), media_type="audio/l16")
 
 
 @app.get("/intro")
@@ -215,7 +216,7 @@ def intro_file():
             if chunk:
                 yield chunk
 
-    return StreamingResponse(audio_generator(), media_type="audio/wav")
+    return StreamingResponse(audio_generator(), media_type="audio/l16")
 
 # -------------------------------------------------------------------
 # Lancer le serveur

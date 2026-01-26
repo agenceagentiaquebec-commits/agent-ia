@@ -1,0 +1,11 @@
+git add .
+
+git commit -m "Version ultra-stable streaming"
+
+git push
+
+
+
+gcloud builds submit --tag gcr.io/agent-ai-485321/emily-backend
+
+gcloud run deploy emily-backend --image gcr.io/agent-ai-485321/emily-backend --platform managed --region northamerica-northeast1 --allow-unauthenticated
