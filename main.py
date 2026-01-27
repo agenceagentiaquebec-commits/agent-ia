@@ -75,6 +75,7 @@ Le JSON doit contenir :
 
 
 def generate_wav_file(text):
+    global last_audio_file # <-- Obligatoire
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVEN_VOICE_ID}"
 
     headers = {
