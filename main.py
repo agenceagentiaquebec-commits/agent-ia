@@ -133,7 +133,7 @@ async def voice(request: Request):
         )
         return Response(
             content=f"""<Response>
-<Play>https://emily-backend-996818120694.northamerica-northeast1.run.app/voice-file</Play>
+<Play>https://emily-backend-zilmjqw47q-nn.a.run.app/voice-file</Play>
 <Pause length="1"/>
 <Redirect>/listen</Redirect>
 </Response>""",
@@ -156,7 +156,7 @@ async def voice(request: Request):
     # Emily parle -> puis Twilio écoute
     return Response(
         content=f"""<Response>
-<Play>https://emily-backend-996818120694.northamerica-northeast1.run.app/voice-file</Play>
+<Play>https://emily-backend-zilmjqw47q-nn.a.run.app/voice-file</Play>
 <Pause length="1"/>
 <Redirect>/listen</Redirect>
 </Response>""",
