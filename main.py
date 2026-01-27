@@ -10,11 +10,10 @@ import os
 import requests
 import json
 import uuid
+import subprocess
 
 # Charger ton fichier .env
 load_dotenv()
-
-
 
 ELEVEN_API_KEY = os.getenv("ELEVEN_API_KEY")
 ELEVEN_VOICE_ID = os.getenv("ELEVEN_VOICE_ID")
@@ -70,19 +69,19 @@ Le JSON doit contenir :
         return '{"final_reply": "Je suis désolée, une erreur est survenue.", "extracted_info": {}}'
 
 # ---------------------------------------------------------
-# Génération WAV 
+# Génération WAV + Conversion FFMPEG (Twilio-compatible)
 # ---------------------------------------------------------
 
 
 def generate_wav_file(text):
     global last_audio_file # <-- Obligatoire
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVEN_VOICE_ID}"
 
+    #1 Génération ElevenLabs (WAV non compatible Twilio)
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVEN_VOICE_ID}"
     headers = {
         "xi-api-key": ELEVEN_API_KEY,
         "Content-Type": "application/json"
     }
-
     data = {
         "text": text,
         "model_id": "eleven_turbo_v2_5",
@@ -94,24 +93,36 @@ def generate_wav_file(text):
             "use_speaker_boost": True
         }
     }
+        
+    response = requests.post(url, json=data, headers=headers)
+    if response.status_code != 200:
+        print("Erreur ElevenLabs:", response.status_code, response.text)
+        return None
+    
+    # Fichier brut ElevenLabs
+    raw_filename = f"/tmp/{uuid.uuid4()}.wav"
+    with open(raw_filename, "wb") as f:
+        f.write(response.content)
 
+    # 2. Conversion FFMPEG -> WAV PCM 16 kHz mono (Twilio-compatible)
+    final_filename = f"/tmp/{uuid.uuid4()}.wav"
+    
+    ffmpeg_cmd = [
+        "ffmpeg",
+        "-y",
+        "-i", raw_filename,
+        "-ac", "1",     #mono
+        "-ar", "16000",  # 16 kHz
+        "-acodec", "pcm_s16le",  # PCM 16-bit
+        final_filename
+    ]
+    
     try:
-        response = requests.post(url, json=data, headers=headers)
-
-        if response.status_code != 200:
-            print("Erreur ElevenLabs:", response.status_code, response.text)
-            return None
-    
-        # On génère un fichier WAV unique
-        filename = f"/tmp/{uuid.uuid4()}.wav"
-        with open(filename, "wb") as f:
-            f.write(response.content)
-
-        last_audio_file = filename
-        return filename
-    
+        subprocess.run(ffmpeg_cmd, check=True)
+        last_audio_file = final_filename
+        return final_filename
     except Exception as e:
-        print("Erreur ElevenLabs:", e)
+        print("Erreur conversion ffmpeg:", e)
         return None
 
 # ---------------------------------------------------------
