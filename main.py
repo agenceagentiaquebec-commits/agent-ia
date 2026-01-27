@@ -84,7 +84,7 @@ def generate_wav_file(text):
     }
     data = {
         "text": text,
-        "model_id": "eleven_turbo_v2",
+        "model_id": "Multilingual_v2",
         "output_format": "wav",   # <-- wav complet
         "voice_settings": {
             "stability": 0.4,
