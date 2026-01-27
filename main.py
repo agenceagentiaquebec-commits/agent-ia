@@ -3,12 +3,13 @@
 # ---------------------------------------------------------
 
 from fastapi import FastAPI, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import Response, FileResponse
 from dotenv import load_dotenv
 from openai import OpenAI
 import os
 import requests
 import json
+import uuid
 
 # Charger ton fichier .env
 load_dotenv()
@@ -19,14 +20,11 @@ ELEVEN_API_KEY = os.getenv("ELEVEN_API_KEY")
 ELEVEN_VOICE_ID = os.getenv("ELEVEN_VOICE_ID")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-
-print("OPENAI KEY LOADED:", OPENAI_API_KEY)
-
 client = OpenAI(api_key=OPENAI_API_KEY)
 app = FastAPI()
 
 conversation_state = {}
-last_text_to_speak = None  # on stocke le texte
+last_audio_file = None  # on stock un fichier WAV, pas un stream
 
 # ---------------------------------------------------------
 # Fonction d'analyse OpenAI
@@ -72,12 +70,12 @@ Le JSON doit contenir :
         return '{"final_reply": "Je suis désolée, une erreur est survenue.", "extracted_info": {}}'
 
 # ---------------------------------------------------------
-# STREAMING AUDIO (vrai streaming ElevenLabs)
+# Génération WAV 
 # ---------------------------------------------------------
 
 
-def generate_audio_stream(text):
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVEN_VOICE_ID}/stream"
+def generate_wav_file(text):
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVEN_VOICE_ID}"
 
     headers = {
         "xi-api-key": ELEVEN_API_KEY,
@@ -87,7 +85,7 @@ def generate_audio_stream(text):
     data = {
         "text": text,
         "model_id": "eleven_turbo_v2_5",
-        "output_format": "pcm_16000",   # <-- FORMAT COMPATIBLE TWILIO
+        "output_format": "wav",   # <-- wav complet
         "voice_settings": {
             "stability": 0.4,
             "similarity_boost": 0.8,
@@ -97,16 +95,22 @@ def generate_audio_stream(text):
     }
 
     try:
-    # stream=True -> réception chunk par chunk
-        response = requests.post(url, json=data, headers=headers, stream=True, timeout=30)
+        response = requests.post(url, json=data, headers=headers)
 
         if response.status_code != 200:
             print("Erreur ElevenLabs:", response.status_code, response.text)
             return None
     
-        return response
+        # On génère un fichier WAV unique
+        filename = f"/tmp/{uuid.uuid4()}.wav"
+        with open(filename, "wb") as f:
+            f.write(response.content)
+
+        last_audio_file = filename
+        return filename
+    
     except Exception as e:
-        print("Erreur streaming ElevenLabs:", e)
+        print("Erreur ElevenLabs:", e)
         return None
 
 # ---------------------------------------------------------
@@ -115,7 +119,7 @@ def generate_audio_stream(text):
 
 @app.post("/voice")
 async def voice(request: Request):
-    global conversation_state, last_text_to_speak
+    global conversation_state, last_audio_file
 
     data = await request.form()
     print("Twilio a bien appelé /voice")
@@ -123,7 +127,7 @@ async def voice(request: Request):
 
     # Si aucun message n'a été dit -> jouer l'intro
     if not user_message:
-        last_text_to_speak = (
+        generate_wav_file(
             "Bonjour, ici Emily des Constructions P Gendreau. "
             "Merci d'avoir appelé aujourd'hui. Comment puis-je vous aider?"
         )
@@ -146,8 +150,8 @@ async def voice(request: Request):
 
     conversation_state.update(analysis.get("extracted_info", {}))
 
-    # On stocke le texte, pas le stream
-    last_text_to_speak = analysis["final_reply"]
+    # Génération WAV
+    generate_wav_file(analysis["final_reply"])
 
     # Emily parle -> puis Twilio écoute
     return Response(
@@ -179,44 +183,17 @@ async def listen():
     )
 
 # ---------------------------------------------------------
-# Endpoint STREAMING audio stable
+# Endpoint WAV
 # ---------------------------------------------------------
 
 @app.get("/voice-file")
 def voice_file():
-    global last_text_to_speak
+    global last_audio_file
 
-    if not last_text_to_speak:
+    if not last_audio_file:
         return Response("No audio", status_code=404)
-    
-    stream = generate_audio_stream(last_text_to_speak)
-    
-    if stream is None:
-        return Response("Erreur audio", status_code=500)
-    
-    
-    def audio_generator():
-        for chunk in stream.iter_content(chunk_size=1024):
-            if chunk:
-                yield chunk
 
-    return StreamingResponse(audio_generator(), media_type="audio/l16")
-
-
-@app.get("/intro")
-def intro_file():
-    intro_text = (
-        "Bonjour, ici Emily des Constructions P Gendreau. "
-        "Merci d'avoir appelé aujourd'hui. Comment puis-je vous aider?"
-    )
-    intro_stream = generate_audio_stream(intro_text)
-
-    def audio_generator():
-        for chunk in intro_stream.iter_content(chunk_size=1024):
-            if chunk:
-                yield chunk
-
-    return StreamingResponse(audio_generator(), media_type="audio/l16")
+    return FileResponse(last_audio_file, media_type="audio/wav")
 
 # -------------------------------------------------------------------
 # Lancer le serveur
