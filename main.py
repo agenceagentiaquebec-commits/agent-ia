@@ -6,11 +6,13 @@ from fastapi import FastAPI, Request
 from fastapi.responses import Response, FileResponse
 from dotenv import load_dotenv
 from openai import OpenAI
+from threading import Lock
 import os
 import requests
 import json
 import uuid
 import subprocess
+import threading
 
 # Charger ton fichier .env
 load_dotenv()
@@ -24,6 +26,58 @@ app = FastAPI()
 
 conversation_state = {}
 last_audio_file = None  # on stock un fichier WAV, pas un stream
+pending_audio_file = None # Fichier généré en arrière-plan
+last_call_sid = None # Pour détecter un nouvel appel
+
+# -------------------------------------------------------------
+# Génération WAV + Conversion FFMPEG
+# -------------------------------------------------------------
+
+def generate_wav_file(text):
+    global pending_audio_file
+
+    # 1. Génération Elevenlabs
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVEN_VOICE_ID}"
+    headers = {"xi-api-key": ELEVEN_API_KEY, "Content-Type": "application/json"}
+    data = {
+        "text": text,
+        "model_id": "eleven_multilingual_v2",
+        "output_format": "wav",
+        "voice_settings": {
+            "stability": 0.4,
+            "similarity_boost": 0.8,
+            "style": 0.3,
+            "use_speaker_boost": True
+        }
+    }
+
+    response = requests.post(url, json=data, headers=headers)
+    if response.status_code != 200:
+        print("Erreur ElevenLabs", response.status_code, response.text)
+        return None
+    
+    raw_filename = f"/tmp/{uuid.uuid4()}_raw.wav"
+    with open(raw_filename, "wb") as f:
+        f.write(response.content)
+
+    # 2. Conversion FFMPEG -> WAV PCM 16 kHz mono
+    final_filename = f"/tmp/{uuid.uuid4()}.wav"
+    ffmpeg_cmd = [
+        "ffmpeg", "-y",
+        "-i", raw_filename,
+        "-ac", "1",
+        "-ar", "16000",
+        "-acodec", "pcm_s16le",
+        final_filename
+    ]
+
+    try:
+        subprocess.run(ffmpeg_cmd, check=True)
+        pending_audio_file = final_filename
+        return final_filename
+    except Exception as e:
+        print("Erreur conversion ffmpeg:", e)
+        return None
 
 # ---------------------------------------------------------
 # Fonction d'analyse OpenAI
@@ -66,64 +120,30 @@ Le JSON doit contenir :
 
     except Exception as e:
         print("Erreur OpenAI:", e)
-        return '{"final_reply": "Je suis désolée, une erreur est survenue.", "extracted_info": {}}'
+        return '{"final_reply": "Je suis désolée, une erreur est survenue."}'
 
 # ---------------------------------------------------------
-# Génération WAV + Conversion FFMPEG (Twilio-compatible)
+# Thread de génération asynchrone
 # ---------------------------------------------------------
 
+def background_generation(user_message):
+    global last_audio_file, pending_audio_file
 
-def generate_wav_file(text):
-    global last_audio_file # <-- Obligatoire
-
-    #1 Génération ElevenLabs (WAV non compatible Twilio)
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVEN_VOICE_ID}"
-    headers = {
-        "xi-api-key": ELEVEN_API_KEY,
-        "Content-Type": "application/json"
-    }
-    data = {
-        "text": text,
-        "model_id": "eleven_multilingual_v2",
-        "output_format": "wav",   # <-- wav complet
-        "voice_settings": {
-            "stability": 0.4,
-            "similarity_boost": 0.8,
-            "style": 0.3,
-            "use_speaker_boost": True
-        }
-    }
-        
-    response = requests.post(url, json=data, headers=headers)
-    if response.status_code != 200:
-        print("Erreur ElevenLabs:", response.status_code, response.text)
-        return None
-    
-    # Fichier brut ElevenLabs
-    raw_filename = f"/tmp/{uuid.uuid4()}.wav"
-    with open(raw_filename, "wb") as f:
-        f.write(response.content)
-
-    # 2. Conversion FFMPEG -> WAV PCM 16 kHz mono (Twilio-compatible)
-    final_filename = f"/tmp/{uuid.uuid4()}.wav"
-    
-    ffmpeg_cmd = [
-        "ffmpeg",
-        "-y",
-        "-i", raw_filename,
-        "-ac", "1",     #mono
-        "-ar", "16000",  # 16 kHz
-        "-acodec", "pcm_s16le",  # PCM 16-bit
-        final_filename
-    ]
+    analysis_json = analyze_message(user_message, conversation_state)
     
     try:
-        subprocess.run(ffmpeg_cmd, check=True)
-        last_audio_file = final_filename
-        return final_filename
-    except Exception as e:
-        print("Erreur conversion ffmpeg:", e)
-        return None
+        analysis = json.loads(analysis_json)
+    except:
+        analysis = {"final_reply": "Je suis désolée, une erreur est survenue.", "extracted_info": {}}
+
+    conversation_state.update(analysis.get("extracted_info", {}))
+
+    # Génération audio
+    final_reply = analysis.get("final_reply", "Je suis désolée, une erreur est survenue.")
+    generate_wav_file(final_reply)
+
+    # Quand prêt -> devient la réponse officielle
+    last_audio_file = pending_audio_file
 
 # ---------------------------------------------------------
 # Endpoint Twilio (POST)
@@ -131,18 +151,29 @@ def generate_wav_file(text):
 
 @app.post("/voice")
 async def voice(request: Request):
-    global conversation_state, last_audio_file
+    global last_audio_file, pending_audio_file, last_call_sid
 
     data = await request.form()
     print("Twilio a bien appelé /voice")
-    user_message = data.get("SpeechResult", "")
 
-    # Si aucun message n'a été dit -> jouer l'intro
-    if not user_message:
+    user_message = data.get("SpeechResult", "")
+    call_sid = data.get("CallSid")
+
+    # 1. Réponse instantanée
+    instant_reply = "/tmp/instant.wav"
+
+    # -------------------------------------------------
+    # 1. Détection d'un nouvel appel -> jouer l'intro
+    # -------------------------------------------------
+    if call_sid != last_call_sid:
+        last_call_sid = call_sid
         generate_wav_file(
             "Bonjour, ici Emily des Constructions P Gendreau. "
             "Merci d'avoir appelé aujourd'hui. Comment puis-je vous aider?"
         )
+        if pending_audio_file:
+            os.rename(pending_audio_file, instant_reply)
+
         return Response(
             content=f"""<Response>
 <Play>https://emily-backend-zilmjqw47q-nn.a.run.app/voice-file</Play>
@@ -152,28 +183,29 @@ async def voice(request: Request):
             media_type="application/xml"
         )
 
-    # Analyse OpenAI
-    analysis_json = analyze_message(user_message, conversation_state)
+    # -------------------------------------------------
+    # 2. Réponse instantanée pour les tours suivants
+    # -------------------------------------------------
 
-    try:
-        analysis = json.loads(analysis_json)
-    except:
-        analysis = {"final_reply": "Je suis désolée, une erreur est survenue.", "extracted_info": {}}
+    if not os.path.exists(instant_reply):
+        # Génère une phrase instantanée une seule fois
+        generate_wav_file("hum, parfait, bien reçu...")
+        if pending_audio_file:
+            os.rename(pending_audio_file, instant_reply)
 
-    conversation_state.update(analysis.get("extracted_info", {}))
+    # 3. Lance la génération en arrière-plam
+    threading.Thread(target=background_generation, args=(user_message,)).start()
 
-    # Génération WAV
-    generate_wav_file(analysis["final_reply"])
-
-    # Emily parle -> puis Twilio écoute
+    # 4. Twilio joue la réponse instantanée
     return Response(
         content=f"""<Response>
 <Play>https://emily-backend-zilmjqw47q-nn.a.run.app/voice-file</Play>
 <Pause length="1"/>
 <Redirect>/listen</Redirect>
 </Response>""",
-        media_type="application/xml"
-    )
+            media_type="application/xml"
+        )
+
 # ----------------------------------------
 # la place où Twilio écoute
 # ----------------------------------------
@@ -187,7 +219,7 @@ async def listen():
         action="/voice"
         method="POST"
         speechTimeout="auto"
-        timeout="1"
+        timeout="3"
         enhanced="true"
         speechModel="default"/>
 </Response>""",
@@ -195,7 +227,7 @@ async def listen():
     )
 
 # ---------------------------------------------------------
-# Endpoint WAV
+# Endpoint WAV Final
 # ---------------------------------------------------------
 
 @app.get("/voice-file")
@@ -203,6 +235,9 @@ def voice_file():
     global last_audio_file
 
     if not last_audio_file:
+        # fallback : jouer l'instantané si la réponse finale n'est pas prête
+        if os.path.exists("/tmp/instant.wav"):
+            return FileResponse("/tmp/instant.wav", media_type="audio/wav")
         return Response("No audio", status_code=404)
 
     return FileResponse(last_audio_file, media_type="audio/wav")
