@@ -222,13 +222,12 @@ async def listen():
         action="/voice"
         method="POST"
         speechTimeout="auto"
-        timeout="3"/>
+        timeout="3"
+        enhanced="true"
+        speechModel="default"/>
 </Response>""",
         media_type="application/xml"
     )
-#removed from Gather()
-# enhanced="true"
-#        speechModel="default"
 
 # ---------------------------------------------------------
 # Endpoint WAV Final
