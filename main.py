@@ -155,9 +155,9 @@ async def voice(request: Request):
 
     data = await request.form()
     print("Twilio a bien appelé /voice")
-
-    user_message = data.get("SpeechResult", "")
     call_sid = data.get("CallSid")
+    user_message = data.get("SpeechResult", "")
+    
 
     # 1. Réponse instantanée
     instant_reply = "/tmp/instant.wav"
@@ -171,13 +171,15 @@ async def voice(request: Request):
             "Bonjour, ici Emily des Constructions P Gendreau. "
             "Merci d'avoir appelé aujourd'hui. Comment puis-je vous aider?"
         )
+        # Attendre que le fichier soit prêt
         if pending_audio_file:
             os.rename(pending_audio_file, instant_reply)
-
+        
+        last_audio_file = instant_reply
+        
         return Response(
             content=f"""<Response>
 <Play>https://emily-backend-zilmjqw47q-nn.a.run.app/voice-file</Play>
-<Pause length="1"/>
 <Redirect>/listen</Redirect>
 </Response>""",
             media_type="application/xml"
@@ -187,11 +189,13 @@ async def voice(request: Request):
     # 2. Réponse instantanée pour les tours suivants
     # -------------------------------------------------
 
-    if not os.path.exists(instant_reply):
         # Génère une phrase instantanée une seule fois
         generate_wav_file("hum, parfait, bien reçu...")
+
         if pending_audio_file:
             os.rename(pending_audio_file, instant_reply)
+
+        last_audio_file = instant_reply
 
     # 3. Lance la génération en arrière-plam
     threading.Thread(target=background_generation, args=(user_message,)).start()
@@ -200,7 +204,6 @@ async def voice(request: Request):
     return Response(
         content=f"""<Response>
 <Play>https://emily-backend-zilmjqw47q-nn.a.run.app/voice-file</Play>
-<Pause length="1"/>
 <Redirect>/listen</Redirect>
 </Response>""",
             media_type="application/xml"
@@ -219,12 +222,13 @@ async def listen():
         action="/voice"
         method="POST"
         speechTimeout="auto"
-        timeout="3"
-        enhanced="true"
-        speechModel="default"/>
+        timeout="3"/>
 </Response>""",
         media_type="application/xml"
     )
+#removed from Gather()
+# enhanced="true"
+#        speechModel="default"
 
 # ---------------------------------------------------------
 # Endpoint WAV Final
@@ -234,13 +238,15 @@ async def listen():
 def voice_file():
     global last_audio_file
 
-    if not last_audio_file:
-        # fallback : jouer l'instantané si la réponse finale n'est pas prête
-        if os.path.exists("/tmp/instant.wav"):
-            return FileResponse("/tmp/instant.wav", media_type="audio/wav")
-        return Response("No audio", status_code=404)
+    # Toujours renvoyer un fichier valide
+    if last_audio_file and os.path.exists(last_audio_file):
+        return FileResponse(last_audio_file, media_type="audio/wav")
 
-    return FileResponse(last_audio_file, media_type="audio/wav")
+    #FallBack ultime
+    if os.path.exists("/tmp/instant.wav"):
+        return FileResponse("/tmp/instant.wav", media_type="audio/wav")
+    
+    return Response("No audio", status_code=200)
 
 # -------------------------------------------------------------------
 # Lancer le serveur
