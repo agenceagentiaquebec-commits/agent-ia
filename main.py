@@ -179,7 +179,7 @@ async def voice(request: Request):
         
         return Response(
             content=f"""<Response>
-<Play>https://emily-backend-zilmjqw47q-nn.a.run.app/voice-file</Play>
+<Play>https://emily-backend-996818120694.northamerica-northeast1.run.app/voice-file</Play>
 <Redirect>/listen</Redirect>
 </Response>""",
             media_type="application/xml"
@@ -203,7 +203,7 @@ async def voice(request: Request):
     # 4. Twilio joue la réponse instantanée
     return Response(
         content=f"""<Response>
-<Play>https://emily-backend-zilmjqw47q-nn.a.run.app/voice-file</Play>
+<Play>https://emily-backend-996818120694.northamerica-northeast1.run.app/voice-file</Play>
 <Redirect>/listen</Redirect>
 </Response>""",
             media_type="application/xml"
