@@ -179,7 +179,7 @@ async def voice(request: Request):
         
         return Response(
             content=f"""<Response>
-<Play>https://emily-backend-996818120694.northamerica-northeast1.run.app/voice-file</Play>
+<Play>https://emily-backend-zilmjqw47q-nn.a.run.app/voice-file</Play>
 <Redirect>/listen</Redirect>
 </Response>""",
             media_type="application/xml"
@@ -189,13 +189,13 @@ async def voice(request: Request):
     # 2. Réponse instantanée pour les tours suivants
     # -------------------------------------------------
 
-        # Génère une phrase instantanée une seule fois
-        generate_wav_file("hum, parfait, bien reçu...")
+    # Génère une phrase instantanée une seule fois
+    generate_wav_file("hum, parfait, bien reçu...")
 
-        if pending_audio_file:
-            os.rename(pending_audio_file, instant_reply)
+    if pending_audio_file:
+        os.rename(pending_audio_file, instant_reply)
 
-        last_audio_file = instant_reply
+    last_audio_file = instant_reply
 
     # 3. Lance la génération en arrière-plam
     threading.Thread(target=background_generation, args=(user_message,)).start()
@@ -203,7 +203,7 @@ async def voice(request: Request):
     # 4. Twilio joue la réponse instantanée
     return Response(
         content=f"""<Response>
-<Play>https://emily-backend-996818120694.northamerica-northeast1.run.app/voice-file</Play>
+<Play>https://emily-backend-zilmjqw47q-nn.a.run.app/voice-file</Play>
 <Redirect>/listen</Redirect>
 </Response>""",
             media_type="application/xml"
