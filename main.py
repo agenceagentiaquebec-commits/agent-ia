@@ -156,7 +156,7 @@ async def voice(request: Request):
     data = await request.form()
     print("Twilio a bien appelé /voice")
     call_sid = data.get("CallSid")
-    user_message = data.get("SpeechResult", "")
+    user_message = data.get("SpeechResult", "").strip()
     
 
     # 1. Réponse instantanée
@@ -186,11 +186,27 @@ async def voice(request: Request):
         )
 
     # -------------------------------------------------
-    # 2. Réponse instantanée pour les tours suivants
+    # 2. Si la vraie réponse est prête, la jouer
     # -------------------------------------------------
+    if last_audio_file and os.path.exists(last_audio_file) and user_message == "":
+        # L'utilisateur n'a rien dit -> rejouer la vraie réponse
+        return Response(
+            content=f"""<Response>
+<Play>https://emily-backend-zilmjqw47q-nn.a.run.app/voice-file</Play>
+<Redirect>/listen</Redirect>
+</Response>""",
+            media_type="application/xml"
+        )
+
+    # ---------------------------------------------------------------------------
+    # 2. Sinon -> Réponse instantanée + lancer la vraie pour les tours suivants
+    # ---------------------------------------------------------------------------
 
     # Génère une phrase instantanée une seule fois
-    generate_wav_file("hum, parfait, bien reçu...")
+    if user_message.strip():
+        generate_wav_file("hum, parfait, bien reçu...")
+    else:
+        generate_wav_file("Je vous écoute")
 
     if pending_audio_file:
         os.rename(pending_audio_file, instant_reply)
@@ -206,8 +222,8 @@ async def voice(request: Request):
 <Play>https://emily-backend-zilmjqw47q-nn.a.run.app/voice-file</Play>
 <Redirect>/listen</Redirect>
 </Response>""",
-            media_type="application/xml"
-        )
+        media_type="application/xml"
+    )
 
 # ----------------------------------------
 # la place où Twilio écoute
@@ -221,8 +237,7 @@ async def listen():
         language="fr-FR"
         action="/voice"
         method="POST"
-        speechTimeout="auto"
-        timeout="3"
+        timeout="8"
         enhanced="true"
         speechModel="default"/>
 </Response>""",
