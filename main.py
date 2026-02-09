@@ -175,7 +175,9 @@ async def voice(request: Request):
         if pending_audio_file:
             os.rename(pending_audio_file, instant_reply)
         
-        last_audio_file = instant_reply
+        # On ne remplace instantanément que si aucune vraie réponse n'est en attente
+        if last_audio_file is None or last_audio_file == "/tmp/instant.wav":
+            last_audio_file = instant_reply
         
         return Response(
             content=f"""<Response>
@@ -188,7 +190,9 @@ async def voice(request: Request):
     # -------------------------------------------------
     # 2. Si la vraie réponse est prête, la jouer
     # -------------------------------------------------
-    if last_audio_file and os.path.exists(last_audio_file) and last_audio_file != "/tmp/instant.wav":
+    if pending_audio_file and os.path.exists(pending_audio_file):
+        last_audio_file = pending_audio_file
+        pending_audio_file = None
         # L'utilisateur n'a rien dit -> rejouer la vraie réponse
         return Response(
             content=f"""<Response>
@@ -237,7 +241,8 @@ async def listen():
         language="fr-FR"
         action="/voice"
         method="POST"
-        timeout="8"
+        speechTimeout="auto"
+        timeout="10"
         enhanced="true"
         speechModel="default"/>
 </Response>""",
