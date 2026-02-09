@@ -188,7 +188,7 @@ async def voice(request: Request):
     # -------------------------------------------------
     # 2. Si la vraie réponse est prête, la jouer
     # -------------------------------------------------
-    if last_audio_file and os.path.exists(last_audio_file) and user_message == "":
+    if last_audio_file and os.path.exists(last_audio_file) and last_audio_file != "/tmp/instant.wav":
         # L'utilisateur n'a rien dit -> rejouer la vraie réponse
         return Response(
             content=f"""<Response>
