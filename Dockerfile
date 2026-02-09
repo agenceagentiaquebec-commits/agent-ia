@@ -11,5 +11,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copier ton code
 COPY . .
 
+# Copier ton fichier .env dans l'image Docker
+COPY .env .env
+
 # Lancer ton app
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
