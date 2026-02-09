@@ -9,3 +9,9 @@ git push
 gcloud builds submit --tag gcr.io/agent-ai-485321/emily-backend
 
 gcloud run deploy emily-backend --image gcr.io/agent-ai-485321/emily-backend --platform managed --region northamerica-northeast1 --allow-unauthenticated
+
+
+
+
+
+ma voix préférée : KFNvimmuOIRv7m64kCwe
