@@ -25,9 +25,16 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 app = FastAPI()
 
 conversation_state = {}
-last_audio_file = None  # on stock un fichier WAV, pas un stream
+
+# Fichiers audio
+last_audio_file = None  # Dernière vraie réponse prête
 pending_audio_file = None # Fichier généré en arrière-plan
+instant_audio_file = "/tmp/instant.wav"
+
+# Appels
 last_call_sid = None # Pour détecter un nouvel appel
+user_spoke_last_turn = False # Pour savoir si on doit jouer la vraie réponse ou non
+
 
 # -------------------------------------------------------------
 # Génération WAV + Conversion FFMPEG
@@ -151,33 +158,34 @@ def background_generation(user_message):
 
 @app.post("/voice")
 async def voice(request: Request):
-    global last_audio_file, pending_audio_file, last_call_sid
+    global last_audio_file, pending_audio_file, last_call_sid, user_spoke_last_turn
 
     data = await request.form()
-    print("Twilio a bien appelé /voice")
     call_sid = data.get("CallSid")
     user_message = data.get("SpeechResult", "").strip()
     
+    print("Twilio a bien appelé /voice")
 
-    # 1. Réponse instantanée
-    instant_reply = "/tmp/instant.wav"
+    # Détection si l'utilisateur a parlé
+    user_spoke_last_turn = (user_message != "")
 
     # -------------------------------------------------
     # 1. Détection d'un nouvel appel -> jouer l'intro
     # -------------------------------------------------
     if call_sid != last_call_sid:
         last_call_sid = call_sid
+        last_audio_file = None
+        pending_audio_file = None
+
         generate_wav_file(
             "Bonjour, ici Emily des Constructions P Gendreau. "
             "Merci d'avoir appelé aujourd'hui. Comment puis-je vous aider?"
         )
         # Attendre que le fichier soit prêt
         if pending_audio_file:
-            os.rename(pending_audio_file, instant_reply)
+            os.rename(pending_audio_file, instant_audio_file)
         
-        # On ne remplace instantanément que si aucune vraie réponse n'est en attente
-        if last_audio_file is None or last_audio_file == "/tmp/instant.wav":
-            last_audio_file = instant_reply
+        last_audio_file = instant_audio_file
         
         return Response(
             content=f"""<Response>
@@ -188,12 +196,9 @@ async def voice(request: Request):
         )
 
     # -------------------------------------------------
-    # 2. Si la vraie réponse est prête, la jouer
+    # 2. Si la vraie réponse est prête, et l'utilisateur ne parle pas
     # -------------------------------------------------
-    if pending_audio_file and os.path.exists(pending_audio_file):
-        last_audio_file = pending_audio_file
-        pending_audio_file = None
-        # L'utilisateur n'a rien dit -> rejouer la vraie réponse
+    if not user_spoke_last_turn and last_audio_file and last_audio_file != instant_audio_file:
         return Response(
             content=f"""<Response>
 <Play>https://emily-backend-zilmjqw47q-nn.a.run.app/voice-file</Play>
@@ -207,15 +212,12 @@ async def voice(request: Request):
     # ---------------------------------------------------------------------------
 
     # Génère une phrase instantanée une seule fois
-    if user_message.strip():
-        generate_wav_file("hum, parfait, bien reçu...")
-    else:
-        generate_wav_file("Je vous écoute")
+    generate_wav_file("hum, parfait, bien reçu...")
 
     if pending_audio_file:
-        os.rename(pending_audio_file, instant_reply)
+        os.rename(pending_audio_file, instant_audio_file)
 
-    last_audio_file = instant_reply
+    last_audio_file = instant_audio_file
 
     # 3. Lance la génération en arrière-plam
     threading.Thread(target=background_generation, args=(user_message,)).start()
@@ -242,7 +244,7 @@ async def listen():
         action="/voice"
         method="POST"
         speechTimeout="auto"
-        timeout="10"
+        timeout="8"
         enhanced="true"
         speechModel="default"/>
 </Response>""",
@@ -262,8 +264,8 @@ def voice_file():
         return FileResponse(last_audio_file, media_type="audio/wav")
 
     #FallBack ultime
-    if os.path.exists("/tmp/instant.wav"):
-        return FileResponse("/tmp/instant.wav", media_type="audio/wav")
+    if os.path.exists(instant_audio_file):
+        return FileResponse(instant_audio_file, media_type="audio/wav")
     
     return Response("No audio", status_code=200)
 
