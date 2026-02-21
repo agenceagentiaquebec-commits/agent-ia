@@ -5,3 +5,4 @@ OPENAI.env
 ffmpeg/*.json 
 .env 
 secrets/ 
+ffmpeg/
