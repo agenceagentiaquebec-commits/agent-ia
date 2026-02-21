@@ -2,4 +2,6 @@
 OPENAI.env
 *.wav
 *.exe
-ffmpeg/
+ffmpeg/*.json 
+.env 
+secrets/ 
