@@ -1,6 +1,6 @@
 fastapi==0.95.2
 uvicorn[standard]==0.22.0
-openai==1.0.0
+openai==1.12.0
 whisper
 gtts
 openpyxl==3.1.2

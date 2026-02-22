@@ -180,7 +180,7 @@ Le JSON doit contenir :
             ],
             temperature=0.1
         )
-        return resp.choices[0].message.content
+        return resp.choices[0].message["content"]
     except Exception as e:
         print("Erreur OpenAI analyse:", e)
         return '{"final_reply":"Je suis désolée, une erreur est survenue.","extracted_info":{}}'
@@ -206,7 +206,7 @@ Génère STRICTEMENT un JSON avec:
             ],
             temperature=0.2
         )
-        return json.loads(resp.choices[0].message.content)
+        return json.loads(resp.choices[0].message["content"])
     except Exception as e:
         print("Erreur OpenAI résumé:", e)
         return {"resume_conversationnel": "Résumé indisponible", "intent_principale": state.get("intent", "inconnu"), "actions_a_prendre": "Vérifier manuellement."}
