@@ -104,7 +104,7 @@ def generate_wav_file(text: str, target_path: str | None = None):
         "text": text,
         "model_id": "eleven_multilingual_v2",
         "output_format": "wav",
-        "voice_settings": {"stability": 0.4, "similarity_boost": 0.8, "style": 0.3}
+        "voice_settings": {"stability": 0.4, "similarity_boost": 0.8, "style": 0.3, "use_speaker_boost": True}
     }
 
     try:
@@ -475,7 +475,7 @@ async def voice(request: Request):
         threading.Thread(target=background_generation, args=(call_sid, user_message)).start()
         state["is_playing_audio"] = True
         return Response(content=f"""<Response>
-Play>https://{os.getenv('PUBLIC_HOST') or 'emily-backend-v-996818120694.northamerica-northeast1.run.app'}/voice-file?call_sid={call_sid}</Play>
+<Play>https://{os.getenv('PUBLIC_HOST') or 'emily-backend-v-996818120694.northamerica-northeast1.run.app'}/voice-file?call_sid={call_sid}</Play>
 <Redirect>/listen</Redirect>
 </Response>""", media_type="application/xml")
     # Fallback : retourner en écoute
