@@ -410,7 +410,7 @@ async def voice(request: Request):
             set_last_audio(call_sid, instant_path)
         state["is_playing_audio"] = True
         return Response(content=f"""<Response>
-<Play>https://{os.getenv('PUBLIC_HOST') or 'emily-backend-v-996818120694.northamerica-northeast1.run.app'}/voice-file?call_sid={call_sid}</Play>
+<Play>https://{os.getenv('PUBLIC_HOST') or 'emily-backend-v-zilmjqw47q-nn.a.run.app'}/voice-file?call_sid={call_sid}</Play>
 <Redirect>/listen</Redirect>
 </Response>""", media_type="application/xml")
     # CAS 3 : Silence
@@ -424,7 +424,7 @@ async def voice(request: Request):
                 set_last_audio(call_sid, p)
             state["is_playing_audio"] = True
             return Response(content=f"""<Response>
-<Play>https://{os.getenv('PUBLIC_HOST') or 'emily-backend-v-996818120694.northamerica-northeast1.run.app'}/voice-file?call_sid={call_sid}</Play>
+<Play>https://{os.getenv('PUBLIC_HOST') or 'emily-backend-v-zilmjqw47q-nn.a.run.app'}/voice-file?call_sid={call_sid}</Play>
 <Redirect>/listen</Redirect>
 </Response>""", media_type="application/xml")
         # 3e silence -> fin d'appel + résumé + sauvegarde
@@ -451,7 +451,7 @@ async def voice(request: Request):
         # Lancer génération vraie réponse
         threading.Thread(target=background_generation, args=(call_sid, user_message)).start()
         return Response(content=f"""<Response>
-<Play>https://{os.getenv('PUBLIC_HOST') or 'emily-backend-v-996818120694.northamerica-northeast1.run.app'}/voice-file?call_sid={call_sid}</Play>
+<Play>https://{os.getenv('PUBLIC_HOST') or 'emily-backend-v-zilmjqw47q-nn.a.run.app'}/voice-file?call_sid={call_sid}</Play>
 <Redirect>/listen</Redirect>
 </Response>""", media_type="application/xml")
     # CAS 2 : Utilisateur parle (tour normal)
@@ -464,7 +464,7 @@ async def voice(request: Request):
             set_pending_audio(call_sid, None)
             state["is_playing_audio"] = True
             return Response(content=f"""<Response>
-<Play>https://{os.getenv('PUBLIC_HOST') or 'emily-backend-v-996818120694.northamerica-northeast1.run.app'}/voice-file?call_sid={call_sid}</Play>
+<Play>https://{os.getenv('PUBLIC_HOST') or 'emily-backend-v-zilmjqw47q-nn.a.run.app'}/voice-file?call_sid={call_sid}</Play>
 <Redirect>/listen</Redirect>
 </Response>""", media_type="application/xml")
         # Sinon : instantané + lancer génération en arrière-plan
@@ -475,7 +475,7 @@ async def voice(request: Request):
         threading.Thread(target=background_generation, args=(call_sid, user_message)).start()
         state["is_playing_audio"] = True
         return Response(content=f"""<Response>
-<Play>https://{os.getenv('PUBLIC_HOST') or 'emily-backend-v-996818120694.northamerica-northeast1.run.app'}/voice-file?call_sid={call_sid}</Play>
+<Play>https://{os.getenv('PUBLIC_HOST') or 'emily-backend-v-zilmjqw47q-nn.a.run.app'}/voice-file?call_sid={call_sid}</Play>
 <Redirect>/listen</Redirect>
 </Response>""", media_type="application/xml")
     # Fallback : retourner en écoute
