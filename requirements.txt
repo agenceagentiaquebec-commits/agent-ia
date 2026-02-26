@@ -1,19 +1,37 @@
-fastapi==0.95.2
-uvicorn[standard]==0.22.0
+
+# ---- Framework Web ----------
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+
+# ------ OpenAI -------
 openai==1.12.0
-whisper
-gtts
-openpyxl==3.1.2
-twilio==8.4.0
-python-dotenv==1.0.0
+httpx==0.27.0  # IMPORTANT : version compatible avec OpenAI 1.x
+
+# ---- Audio / TTS ------
 requests==2.31.0
-ffmpeg
+ffmpeg-python==0.2.0
 python-multipart==0.0.6
+
+# ----- Google Sheets ------
 google-api-python-client==2.86.0
 google-auth==2.23.0
 google-auth-oauthlib==1.1.0
 google-auth-httplib2==0.1.0
 googleapis-common-protos==1.59.0
+
+# ---- Email ----
 sendgrid==6.12.0
-python-http-client
-httpx==0.27.0
+python-http-client==3.3.7
+
+# --- Twilio ----
+twilio==8.4.0
+
+# --- Utils ---
+python-dotenv==1.0.0
+
+
+
+
+
+
+
